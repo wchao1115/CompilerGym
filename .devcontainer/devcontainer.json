@@ -1,0 +1,21 @@
+{
+	"name": "CompilerGym",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"postCreateCommand": "echo 'Conda Environment Ready'",
+	"customizations": {
+		"vscode": {
+		  "extensions": [
+			"ms-python.python",
+			"ms-python.vscode-pylance"
+		  ],
+		  "settings": {
+			"terminal.integrated.defaultProfile.linux": "bash",
+			"python.defaultInterpreterPath": "/opt/conda/bin/python",
+			"python.linting.enabled": true,
+			"python.linting.pylintEnabled": true
+			}
+		}
+	  }
+}

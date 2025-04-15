@@ -1,0 +1,35 @@
+name: comgym
+channels:
+  - conda-forge
+  - dglteam
+dependencies:
+  - python=3.8
+  - pip
+  - absl-py>=0.10.0
+  - deprecated>=1.2.12
+  - fasteners>=0.15
+  - grpcio>=1.32.0,<1.44.0
+  - humanize>=2.6.0
+  - networkx>=2.5
+  - protobuf>=3.13.0,<4.21.0
+  - requests>=2.24.0
+  - tabulate>=0.8.7
+  - aioredis<2.0.0  # Pin version for ray.
+  - dgl=0.9.0
+  - hydra-core=1.1.0
+  - matplotlib>=3.3.4
+  - nevergrad>=0.4.3
+  - submitit>=1.2.0
+  - typer[all]>=0.3.2
+  - pip:
+    - numpy>=1.19.3
+    - pandas>=1.1.5
+    - pydantic>=1.8.0
+    - importlib-metadata<5.0.0
+    - torch>=1.6.0
+    - docker>=4.0.0
+    - geneticalgorithm>=1.0.2
+    - loop_tool_py==0.0.7
+    - opentuner>=0.8.5
+    - ray[default,rllib]==2.0.0
+
