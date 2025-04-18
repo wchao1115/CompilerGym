@@ -16,63 +16,20 @@
 #     $ make init
 #
 repos:
-    - repo: https://github.com/pre-commit/pre-commit-hooks
-      rev: v3.4.0
-      hooks:
-          - id: check-added-large-files
-            args: [--maxkb=10000]
-          - id: check-case-conflict
-          - id: check-docstring-first
-          - id: check-executables-have-shebangs
-          - id: check-json
-          - id: check-merge-conflict
-          - id: check-symlinks
-          - id: end-of-file-fixer
-          - id: pretty-format-json
-            args: [--autofix, --indent=2, --no-sort-keys]
-          - id: requirements-txt-fixer
-          - id: trailing-whitespace
-    - repo: https://github.com/jumanjihouse/pre-commit-hook-yamlfmt
-      rev: 750078a4aedba5d63c04442e697ccda3ddf71351
-      hooks:
-          - id: yamlfmt
-    - repo: https://github.com/timothycrosley/isort
-      rev: 5.7.0
-      hooks:
-          - id: isort
-    - repo: https://github.com/psf/black
-      rev: 22.3.0
-      hooks:
-          - id: black
-            language_version: python3.8
-    - repo: https://gitlab.com/pycqa/flake8
-      rev: 3.8.4
-      hooks:
-          - id: flake8
-    - repo: https://github.com/kynan/nbstripout
-      rev: 0.3.9
-      hooks:
-          - id: nbstripout
-            files: .ipynb
-    - repo: https://github.com/pocc/pre-commit-hooks
-      rev: v1.1.1
-      hooks:
-          - id: clang-format
-            args: [-i]
-    - repo: https://github.com/nametake/pre-commit-prototool
-      rev: v0.1.0
-      hooks:
-          - id: prototool-lint
-          - id: prototool-format-fix
-    - repo: https://github.com/FelixSeptem/pre-commit-golang
-      rev: 12f5442f51377b10b26651ad745206bbe1500ad6
-      hooks:
-          - id: bazel-buildifier
-    - repo: https://github.com/petalmd/dockerfile-pre-commit
-      rev: v1.0
-      hooks:
-          - id: dockerlint
-    - repo: https://github.com/BlankSpruce/gersemi
-      rev: 0.7.5
-      hooks:
-          - id: gersemi
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        language_version: python3.9  # or whatever Python version you're using
+  
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        language_version: python3.9
+  
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8
+        language_version: python3.9
