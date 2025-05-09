@@ -44,7 +44,7 @@ help:
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
-	$(PYTHON) -m pip install -e . --user
+	$(PYTHON) -m pip install . --user
 
 uninstall:
 	$(PYTHON) -m pip uninstall -y compiler_gym_examples
