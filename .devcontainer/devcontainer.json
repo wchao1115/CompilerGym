@@ -14,7 +14,7 @@
 		  ],
 		  "settings": {
 			"terminal.integrated.defaultProfile.linux": "bash",
-			"python.defaultInterpreterPath": "/opt/conda/bin/python",
+			"python.defaultInterpreterPath": "/opt/conda/envs/comgym/bin/python",
 			"python.linting.enabled": true,
 			"python.linting.pylintEnabled": true
 			}

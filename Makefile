@@ -346,7 +346,7 @@ fuzz: install-test-setup
 
 
 install: | bazel-build
-	$(PYTHON) -m pip install . --force-reinstall --no-deps
+	$(PYTHON) -m pip install -e . --force-reinstall --no-deps
 
 .PHONY: install
 
