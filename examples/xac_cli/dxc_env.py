@@ -1,4 +1,6 @@
 import os
+import io
+import zipfile as zip
 from typing import Iterable, List, Dict, DefaultDict
 from compiler_gym.util.registration import register
 from compiler_gym.service.proto import Benchmark as BenchmarkProto
@@ -48,25 +50,25 @@ class ShaderSourceDataset(Dataset):
             license="Microsoft Internal",
             description=self.__class__.__doc__,
             )
-
-        def _content_from_path(path:str) -> bytes:
-            with open(path, 'rb') as file:
-                content = file.read()
-            return content
-
-        prereqs:List[BenchmarkSource] = []
+        
+        # Common files used by every benchmark
+        common_file_paths = []
         for file in [_ for _ in os.listdir(path) if _.lower().endswith(source_ext)]:
-            prereqs.append(BenchmarkSource(filename=file, contents=_content_from_path(path=os.path.join(path, file))))
+            common_file_paths += [os.path.join(path, file)]
 
-        self._benchmarks:DefaultDict[Benchmark] = {}
+        self._benchmarks = {}
         for file in [_ for _ in os.listdir(os.path.join(path, scheme)) if _.lower().endswith(source_ext)]:
-            # Each benchmark has all the source files needed and a file name that identifies which one has the program entry point.
+            file_paths = [os.path.join(path, scheme, file)] + common_file_paths
             uri_path = '/' + os.path.splitext(file)[0].lower()
-            benchmark = Benchmark(
-                proto=BenchmarkProto(uri=base_uri + uri_path, program=File(uri=file)),
-                sources=prereqs
-                )
-            benchmark.add_source(BenchmarkSource(filename=file, contents=_content_from_path(path=os.path.join(path, scheme, file))))
+
+            # Create a zip memory file containing the benchmark program and all the common files.
+            zip_buffer = io.BytesIO()
+            with zip.ZipFile(zip_buffer, 'w', compression=zip.ZIP_DEFLATED) as zip_file:
+                for file_path in file_paths:
+                    with open(file_path, 'rb') as file:
+                        zip_file.writestr(os.path.basename(file_path), file.read())
+
+            benchmark = Benchmark.from_file_contents(uri=base_uri + uri_path, data=zip_buffer.getvalue())
             self._benchmarks[uri_path] = benchmark
 
     def benchmark_uris(self) -> Iterable[str]:
