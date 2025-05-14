@@ -1,7 +1,7 @@
 # Base Image
 FROM mcr.microsoft.com/devcontainers/base:ubuntu
 
-# Install prerequisites
+# Install prerequisites as root user
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
@@ -22,19 +22,31 @@ ENV PATH=$CONDA_DIR/bin:$PATH
 RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
     bash /tmp/miniconda.sh -b -p $CONDA_DIR && \
     rm /tmp/miniconda.sh && \
+    chown -R vscode:vscode /opt/conda && \
     conda clean -afy
 
-# Create a default environment
-COPY environment.yml /tmp/environment.yml
-RUN conda env create -f /tmp/environment.yml && conda clean -afy
+# Switch to vscode user to install conda and the rest.
+USER vscode
+WORKDIR /home/vscode
 
-# Activate environment by default
-SHELL ["conda", "run", "-n", "comgym", "/bin/bash", "-c"]
+RUN conda config --add channels conda-forge && \
+    conda config --set channel_priority strict
 
-# Clone a specific branch of gym to apply a patch. OpenAI gym is a core dependency of the library.
-RUN git clone -b v0.21.0 --single-branch https://github.com/openai/gym.git /tmp/gym
-COPY gym_0.21.0_patch/setup.py /tmp/gym/setup.py
-RUN pip install -e /tmp/gym
+# Copy Conda environment and create it
+COPY environment.yml /home/vscode/environment.yml
+RUN conda env create -f environment.yml && conda clean -afy
+
+# Create a workspace directory
+RUN mkdir -p /home/vscode/gym
+
+# Clone gym repo and patch it
+RUN git config --global http.postBuffer 524288000  # 500MB
+RUN git clone -b v0.21.0 --single-branch --depth 1 https://github.com/openai/gym.git gym
+COPY gym_0.21.0_patch/setup.py ./gym/setup.py
+
+# Ensure subsequent shell runs use the specified conda environment
+RUN echo ". /opt/conda/etc/profile.d/conda.sh && conda activate comgym" >> /home/vscode/.bashrc
+
 
 # To build Compiler-Gym locally, follow these steps:
 #

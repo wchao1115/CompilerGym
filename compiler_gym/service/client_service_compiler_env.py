@@ -968,6 +968,19 @@ class ClientServiceCompilerEnv(CompilerEnv):
         """:raises SessionNotFound: If :meth:`reset()
         <compiler_gym.envs.ClientServiceCompilerEnv.reset>` has not been called.
         """
+        if isinstance(action, IterableType):
+            warnings.warn(
+                "Argument `action` of ClientServiceCompilerEnv.step no longer accepts a list "
+                " of actions. Please use ClientServiceCompilerEnv.multistep instead",
+                category=DeprecationWarning,
+            )
+            return self.multistep(
+                action,
+                observation_spaces=observation_spaces,
+                reward_spaces=reward_spaces,
+                observations=observations,
+                rewards=rewards,
+            )        
         if observations is not None:
             warnings.warn(
                 "Argument `observations` of ClientServiceCompilerEnv.step has been "
