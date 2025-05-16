@@ -18,5 +18,8 @@
 			"extensions.verifySignature": false
 			}
 		}
-	}
+	},
+  	"mounts": [
+    	"source=/mnt/c,target=/mnt/c,type=bind,consistency=cached"
+  	]
 }
