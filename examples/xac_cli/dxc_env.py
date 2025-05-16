@@ -1,12 +1,9 @@
 import os
-import io
-import zipfile as zip
-from typing import Iterable, List, Dict, DefaultDict
+from typing import Iterable
 from compiler_gym.util.registration import register
-from compiler_gym.service.proto import Benchmark as BenchmarkProto
-from compiler_gym.service.proto import File
+from compiler_gym.service.proto import File, Benchmark as BenchmarkProto
 from compiler_gym.spaces import Reward
-from compiler_gym.datasets import Benchmark, BenchmarkSource, Dataset
+from compiler_gym.datasets import Benchmark, Dataset
 from compiler_gym.datasets.uri import BenchmarkUri
 
 class OccupancyReward(Reward):
@@ -38,38 +35,25 @@ class OccupancyReward(Reward):
         self._last_occupancy = observations[0].occupancy
         return reward
 
-class ShaderSourceDataset(Dataset):
+class XacDataset(Dataset):
     """A dataset comprising a collection of HLSL shader programs."""
 
-    def __init__(self, name:str, path:str, *args, **kwargs):
+    def __init__(self, name:str, dataset_path:str, path:str, *args, **kwargs):
         source_ext = ".hlsl"
-        scheme = "benchmark"
-        base_uri = scheme + "://" + name
+        scheme = "benchmark://"
+        benchmark_path = os.path.join(dataset_path, path)
+        
         super().__init__(
             name=name,
             license="Microsoft Internal",
             description=self.__class__.__doc__,
             )
         
-        # Common files used by every benchmark
-        common_file_paths = []
-        for file in [_ for _ in os.listdir(path) if _.lower().endswith(source_ext)]:
-            common_file_paths += [os.path.join(path, file)]
-
         self._benchmarks = {}
-        for file in [_ for _ in os.listdir(os.path.join(path, scheme)) if _.lower().endswith(source_ext)]:
-            file_paths = [os.path.join(path, scheme, file)] + common_file_paths
-            uri_path = '/' + os.path.splitext(file)[0].lower()
-
-            # Create a zip memory file containing the benchmark program and all the common files.
-            zip_buffer = io.BytesIO()
-            with zip.ZipFile(zip_buffer, 'w', compression=zip.ZIP_DEFLATED) as zip_file:
-                for file_path in file_paths:
-                    with open(file_path, 'rb') as file:
-                        zip_file.writestr(os.path.basename(file_path), file.read())
-
-            benchmark = Benchmark.from_file_contents(uri=base_uri + uri_path, data=zip_buffer.getvalue())
-            self._benchmarks[uri_path] = benchmark
+        for file in [_ for _ in os.listdir(benchmark_path) if _.lower().endswith(source_ext)]:
+            file_path = os.path.join(path, file)
+            benchmark = Benchmark(proto=BenchmarkProto(uri=scheme + file_path))
+            self._benchmarks[benchmark.uri.path] = benchmark
 
     def benchmark_uris(self) -> Iterable[str]:
         yield from [str(detail.uri) for _, detail in self._benchmarks.items()]
@@ -80,19 +64,19 @@ class ShaderSourceDataset(Dataset):
         else:
             raise LookupError("Unknown benchmark program name")
 
-def register_dxc_env(port=50051):
+def register_xac_env(port=50051):
     """
     Register a client service environment for DXC compilation. DXC is Windows-only so it'll run
     within a Windows host service that can be accessed from a Linux client via gRPC.
     """
     register(
-        id="dxc-v0",
+        id="xac-v0",
         entry_point="compiler_gym.service.client_service_compiler_env:ClientServiceCompilerEnv",
         kwargs={
             "service": "host.docker.internal:" + str(port),
             "rewards": [OccupancyReward()],
             "datasets": [
-                ShaderSourceDataset(name="dxc-v0-gemm", path=os.path.join(os.getcwd(), "examples/xac_cli/dataset/gemm"))
+                XacDataset(name="xac-v0-gemm", dataset_path="/mnt/c/xac/dataset", path="gemm/generated")
             ]
         },
     )
