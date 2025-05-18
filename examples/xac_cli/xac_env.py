@@ -20,18 +20,19 @@ class OccupancyReward(Reward):
             deterministic=False,
             platform_dependent=True,
         )
-        self._last_occupancy = 0
 
     def reset(self, benchmark: str, observation_view):
-        del benchmark
         self._last_occupancy = 0
 
     def update(self, action, observations, observation_view):
-        del action
-        del observation_view
+        if self._last_occupancy == 0:
+            # first observation, no reward yet
+            self._last_occupancy = observations[0][self.occupancy_index]
+            return 0
 
-        reward = float(observations[0][self.occupancy_index] - self._last_occupancy)
-        self._last_occupancy = observations[0][self.occupancy_index]
+        occupancy = observations[0][self.occupancy_index]        
+        reward = float(occupancy - self._last_occupancy)
+        self._last_occupancy = occupancy
         return reward
 
 class XacDataset(Dataset):
