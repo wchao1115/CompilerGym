@@ -1,4 +1,5 @@
 import os
+import random
 from typing import Iterable
 from compiler_gym.util.registration import register
 from compiler_gym.service.proto import File, Benchmark as BenchmarkProto
@@ -14,7 +15,7 @@ class OccupancyReward(Reward):
     def __init__(self):
         super().__init__(
             name="occupancy",
-            observation_spaces=["isa_metrics"],
+            observation_spaces=["metrics"],
             default_value=0,
             default_negates_returns=True,
             deterministic=False,
@@ -25,20 +26,22 @@ class OccupancyReward(Reward):
         self._last_occupancy = 0
 
     def update(self, action, observations, observation_view):
-        if self._last_occupancy == 0:
-            # first observation, no reward yet
-            self._last_occupancy = observations[0][self.occupancy_index]
-            return 0
-
         occupancy = observations[0][self.occupancy_index]        
         reward = float(occupancy - self._last_occupancy)
         self._last_occupancy = occupancy
         return reward
+    
+    def get_occupancy(self, observations):
+        return observations[0][self.occupancy_index]
+    
+    @property
+    def last_occupancy(self):
+        return self._last_occupancy
 
 class XacDataset(Dataset):
     """A dataset comprising a collection of HLSL shader programs."""
 
-    def __init__(self, name:str, dataset_path:str, path:str, *args, **kwargs):
+    def __init__(self, name: str, dataset_path: str, path: str, **kwargs):
         source_ext = ".hlsl"
         scheme = "benchmark://"
         benchmark_path = os.path.join(dataset_path, path)
@@ -47,6 +50,7 @@ class XacDataset(Dataset):
             name=name,
             license="Microsoft Internal",
             description=self.__class__.__doc__,
+            **kwargs
             )
         
         self._benchmarks = {}
@@ -56,8 +60,8 @@ class XacDataset(Dataset):
             self._benchmarks[benchmark.uri.path] = benchmark
 
     def benchmark_uris(self) -> Iterable[str]:
-        yield from [str(detail.uri) for _, detail in self._benchmarks.items()]
-
+        yield from [str(detail.uri) for _, detail in self._benchmarks.items()]        
+        
     def benchmark_from_parsed_uri(self, uri: BenchmarkUri) -> Benchmark:
         if uri.path in self._benchmarks:
             return self._benchmarks[uri.path]
@@ -77,6 +81,8 @@ def register_xac_env(port=50051):
             "rewards": [OccupancyReward()],
             "datasets": [
                 XacDataset(name="xac-v0-gemm", dataset_path="/mnt/c/xac/dataset", path="gemm/generated")
-            ]
+            ],
+            "observation_space": "states", 
+            "reward_space": "occupancy"
         },
     )
