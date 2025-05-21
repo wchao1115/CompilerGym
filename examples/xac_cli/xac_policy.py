@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 from typing import List, Tuple
 from collections import namedtuple
-from xac_utils import MovingExponentialAverage
+from xac_utils import MovingExponentialAverage, or_mask_across_episodes
 
 ActionValue = namedtuple("ActionValue", ["log_prob", "value"])
 
@@ -31,10 +31,10 @@ class Policy(nn.Module):
         self._fc4 = nn.Linear(hidden_size, hidden_size)
 
         # Actor's output layer
-        self._action_head = nn.Linear(hidden_size, num_actions)
+        self._actor_head = nn.Linear(hidden_size, num_actions)
 
         # Critic's output layer
-        self._value_head = nn.Linear(hidden_size, 1)
+        self._critic_head = nn.Linear(hidden_size, 1)
 
         # Action values and rewards throughout the episode
         self._action_values: List[ActionValue] = []
@@ -54,16 +54,47 @@ class Policy(nn.Module):
         x = x.add(F.relu(self._fc3(x)))
         x = x.add(F.relu(self._fc4(x)))
 
-        # Actor maps the input state to probability of each action that sum to 1
-        action_probs = F.softmax(self._action_head(x), dim=-1)
+        # Actor maps the input state to logits of each action
+        logits = self._actor_head(x)
 
         # Critic evaluates the input state into a single value
-        state_value = self._value_head(x)
+        state_value = self._critic_head(x)
 
         # Return a tuple of 2 values:
-        # 1. a list with the probability of each action over the action space
+        # 1. a list with the logits of each action over the action space
         # 2. the value of the input state
-        return action_probs, state_value
+        return logits, state_value
+    
+    def select_action(self, state, mask, temperature: float = 1.0, exploration_rate: float = 0.001) -> int:
+        """Selects an action from the input state and save it for the record"""
+
+        logits, value = self(state)
+
+        if mask is not None:
+            # mask off actions already taken
+            logits = logits.masked_fill(mask, float("-inf"))
+
+        # optional temperature scaling
+        logits = logits / temperature
+
+        # create a probability distribution where the probability of action i is probs[i]
+        distribution = Categorical(logits=logits)
+
+        # sample an action from the distribution or pick an action randomly if in an exploration mode
+        if random.random() < exploration_rate:
+            # only sample from valid (unmasked) actions
+            valid_actions = (~mask).nonzero(as_tuple=True)[0] if mask is not None else torch.arange(len(logits))
+            action = valid_actions[torch.randint(0, len(valid_actions), ())]
+        else:
+            action = distribution.sample()
+
+        # Storing both the log probability and the state value together in an ActionValue object 
+        # makes it easy to later compute losses and perform updates during training.Recording this 
+        # info ensures that all relevant information about actions taken during an episode is collected 
+        # and can be used for learning after the episode ends. 
+        log_prob = distribution.log_prob(action)
+        self._action_values.append(ActionValue(log_prob, value))
+        return action.item()
 
     def finish_episode(self, optimizer) -> float:
         """Calculates actor and critic loss and performs backprop."""
@@ -120,11 +151,10 @@ class Policy(nn.Module):
         # Reset gradients
         optimizer.zero_grad()
 
-        # Sum up all the values of policy_losses and value_losses.
+        # Sum up all the values of policy_losses and value_losses to get the total loss.
+        # Perform backpropagation to compute gradients and update the model parameters.
         loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum()
         loss_value = loss.item()
-
-        # Perform backpropagation to compute gradients and update the model parameters.
         loss.backward()
         optimizer.step()
 
@@ -134,24 +164,5 @@ class Policy(nn.Module):
 
         return loss_value
     
-    def select_action(self, state, exploration_rate: float) -> int:
-        """Selects an action from the input state and save it for the record"""
-
-        state_tensor = torch.tensor(state, dtype=torch.float32)
-        action_probs, state_value = self(state_tensor)
-
-        # create a probability distribution where the probability of action i is probs[i]
-        distribution = Categorical(action_probs)
-
-        # sample an action from the distribution or pick an action randomly if in an exploration mode
-        if random.random() < exploration_rate:
-            action = torch.tensor(random.randrange(0, len(action_probs)))
-        else:
-            action = distribution.sample()
-
-        # Storing both the log probability and the state value together in an ActionValue object 
-        # makes it easy to later compute losses and perform updates during training.Recording this 
-        # info ensures that all relevant information about actions taken during an episode is collected 
-        # and can be used for learning after the episode ends. 
-        self._action_values.append(ActionValue(distribution.log_prob(action), state_value))
-        return action.item()
+    def append_reward(self, reward: float):
+        self._rewards.append(reward)
