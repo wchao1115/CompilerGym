@@ -8,7 +8,7 @@ from torch.distributions import Categorical
 from xac_env import register_xac_env, XacDataset
 from xac_logger import init_logger
 from xac_policy import Policy
-from xac_utils import MovingExponentialAverage, round_robin_iter, sequential_iter
+from xac_utils import MovingExponentialAverage, or_mask_across_episodes, round_robin_iter, sequential_iter
 
 logger = init_logger("xac_cli")
 
@@ -32,6 +32,8 @@ class Learner():
     def fit(self, num_episodes: int = 100):
         """ Trains the policy over multiple episodes, updating exploration rate and logging statistics after each episode."""
 
+        self._policy.train()
+
         episode = 0
         total_steps = 0
         avg_reward = MovingExponentialAverage(0.95)
@@ -49,12 +51,21 @@ class Learner():
             total_reward = 0
             steps = 0
 
-            while not done:
-                action = self._policy.select_action(state, self._exploration_rate)
+            while not done and steps < self.episode_length:
+                state_tensor = torch.tensor(state, dtype=torch.float32)
+                
+                action = self._policy.select_action(
+                    state_tensor,
+                    # mask any action already taken in the previous steps
+                    or_mask_across_episodes(
+                        mask, self.episode_length, self._action_space.n, steps
+                    ) if steps > 0 else None,
+                    exploration_rate=self._exploration_rate
+                )
                 state, reward, done, _ = self._env.step(action)
+                mask = torch.tensor(state == 1, dtype=torch.bool)
 
-                self._policy._rewards.append(reward)
-
+                self._policy.append_reward(reward)
                 total_reward += reward
                 steps += 1
 
@@ -81,10 +92,11 @@ class Learner():
 
         logger.info(f"Training completed. Total attempts: {total_steps}")
 
-    def predict(self, benchmark, max_steps: int = episode_length, deterministic: bool = True):
+    def predict(self, benchmark, temperature: float = 1.0, greedy: bool = True):
         """ Run the trained policy on a given benchmark and return the sequence of actions and total reward."""
 
         self._policy.eval()
+
         state = self._env.reset(benchmark, observation_space="states")
         done = False
         actions = []
@@ -92,29 +104,45 @@ class Learner():
         steps = 0
 
         with torch.no_grad():
-            while not done and steps < max_steps:
+            while not done and steps < self.episode_length:
                 state_tensor = torch.tensor(state, dtype=torch.float32)
-                action_probs, _ = self._policy(state_tensor)
-                if deterministic:
-                    action = torch.argmax(action_probs).item()
+                logits, _ = self._policy(state_tensor)
+
+                if steps > 0:
+                    # mask off actions already taken from the previous steps
+                    logits = logits.masked_fill(
+                        or_mask_across_episodes(
+                            mask, self.episode_length, self._action_space.n, steps
+                        ),
+                        float("-inf")
+                    )
+
+                # optional temperature scaling
+                logits = logits / temperature
+
+                if greedy:
+                    action = torch.argmax(logits, dim=-1).item()
                 else:
-                    action = Categorical(action_probs).sample().item()
-                actions.append(action)
+                    action = Categorical(logits=logits).sample().item()
+
                 state, reward, done, _ = self._env.step(action)
+                mask = torch.tensor(state == 1, dtype=torch.bool)
+
+                actions.append(action)
+                total_reward += reward
+                steps += 1
                 """
                 logger.info(
-                    f"Step: [{steps + 1}/{max_steps}] "
+                    f"Step: [{steps}/{max_steps}] "
                     f"State: {np.sum(state_tensor.numpy())}, "
                     f"Action: {action}, "
                     f"Reward: {reward} "
                 )
                 """
-                total_reward += reward
-                steps += 1
 
         return actions, total_reward
     
-    def cv(self):
+    def cv(self, greedy: bool = True):
         testing_set = sequential_iter(list(self._env.datasets.benchmarks()))
         improvements = []
 
@@ -123,7 +151,7 @@ class Learner():
             if benchmark is None:
                 break
 
-            actions, _ = self.predict(benchmark)
+            actions, _ = self.predict(benchmark, greedy=greedy)
 
             learned = self._env.reward_space.last_occupancy
             base_metrics = self._env.reset(benchmark, observation_space="metrics")
@@ -132,12 +160,12 @@ class Learner():
             improvements += [(learned - baseline) / baseline]
             logger.info(f"{benchmark.uri}: Baseline: {baseline}, Learned: {learned}, Steps: {len(actions)}")
 
-        logger.info(f"Cross-validation completed. Avg improvements (%): {(np.mean(improvements) * 100):.2f}")
+        logger.info(f"Cross-validation completed Avg improvements (%): {(np.mean(improvements) * 100):.2f}, Greedy: {greedy}")
 
 def main():
     register_xac_env()
     learner = Learner(env=gym.make("xac-v0"))
-    learner.fit(num_episodes=10)
+    learner.fit(num_episodes=50)
     learner.cv()
 
 if __name__ == '__main__':
