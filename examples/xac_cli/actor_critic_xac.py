@@ -1,9 +1,10 @@
 import logging
 import gym
+import csv
 import torch
 import torch.optim as optim
 import numpy as np
-from typing import cast
+from typing import List
 from torch.distributions import Categorical
 from xac_env import register_xac_env, XacDataset
 from xac_logger import init_logger
@@ -27,7 +28,6 @@ class Learner():
         self._reward_space = env.reward_space
         self._policy = Policy(episode_length=self.episode_length, num_actions=self._action_space.n, hidden_size=128)
         self._optimizer = optim.Adam(self._policy.parameters(), lr=self.learning_rate)
-        self._exploration_rate = self.exploration_rate_init
 
     def fit(self, num_episodes: int = 100):
         """ Trains the policy over multiple episodes, updating exploration rate and logging statistics after each episode."""
@@ -38,6 +38,7 @@ class Learner():
         total_steps = 0
         avg_reward = MovingExponentialAverage(0.95)
         avg_loss = MovingExponentialAverage(0.95)
+        exploration_rate = self.exploration_rate_init
 
         training_set = round_robin_iter(list(self._env.datasets.benchmarks()))
 
@@ -60,7 +61,7 @@ class Learner():
                     or_mask_across_episodes(
                         mask, self.episode_length, self._action_space.n, steps
                     ) if steps > 0 else None,
-                    exploration_rate=self._exploration_rate
+                    exploration_rate=exploration_rate
                 )
                 state, reward, done, _ = self._env.step(action)
                 mask = torch.tensor(state == 1, dtype=torch.bool)
@@ -73,7 +74,7 @@ class Learner():
             loss = self._policy.finish_episode(self._optimizer)
 
             # update the exploration rate so action selection is less random over time
-            self._exploration_rate = max(0.1, self._exploration_rate * self.exploration_rate_decay)
+            exploration_rate = max(0.1, exploration_rate * self.exploration_rate_decay)
 
             # stats gathering
             avg_reward.next(total_reward)
@@ -87,7 +88,7 @@ class Learner():
                 f"Total Reward: {total_reward}, "
                 f"Avg Reward: {avg_reward.value:.2f}, "
                 f"Avg Loss: {avg_loss.value:.2f}, "
-                f"Epsilon: {self._exploration_rate:.4f}"
+                f"Epsilon: {exploration_rate:.4f}"
             )
 
         logger.info(f"Training completed. Total attempts: {total_steps}")
@@ -144,6 +145,9 @@ class Learner():
     
     def cv(self, greedy: bool = True):
         testing_set = sequential_iter(list(self._env.datasets.benchmarks()))
+
+        min_baseline, min_learned = float("inf"), float("inf")
+        max_baseline, max_learned = float("-inf"), float("-inf")
         improvements = []
 
         while True:
@@ -157,16 +161,44 @@ class Learner():
             base_metrics = self._env.reset(benchmark, observation_space="metrics")
             baseline = self._env.reward_space.get_occupancy([base_metrics])
 
-            improvements += [(learned - baseline) / baseline]
+            min_learned = min(min_learned, learned)
+            max_learned = max(max_learned, learned) 
+            min_baseline = min(min_baseline, baseline)
+            max_baseline = max(max_baseline, baseline)
+            improvement = (learned - baseline) / baseline
+            improvements.append(improvement)
+
             logger.info(f"{benchmark.uri}: Baseline: {baseline}, Learned: {learned}, Steps: {len(actions)}")
 
-        logger.info(f"Cross-validation completed Avg improvements (%): {(np.mean(improvements) * 100):.2f}, Greedy: {greedy}")
+        avg_improvement = np.mean(improvements)
+        logger.info(f"Cross-validation completed Avg improvements (%): {(avg_improvement * 100):.2f}")
+
+        return avg_improvement * 100, min_baseline, max_baseline, min_learned, max_learned
 
 def main():
     register_xac_env()
     learner = Learner(env=gym.make("xac-v0"))
-    learner.fit(num_episodes=50)
+    learner.fit(num_episodes=100)
     learner.cv()
+
+def run_experiments_and_save_results(episode_counts: List[int]):
+    results = []
+
+    register_xac_env()
+    learner = Learner(env=gym.make("xac-v0"))
+
+    for num_episodes in episode_counts:
+        learner.fit(num_episodes=num_episodes)
+        row = learner.cv()  # returns (avg_improvement, min_baseline, max_baseline, min_learned, max_learned)
+        results.append([num_episodes] + list(row))
+
+    # Write results to CSV
+    with open("experiment_results.csv", "w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["num_episodes", "avg_improvement %", "min_baseline", "max_baseline", "min_learned", "max_learned"])
+        for row in results:
+            writer.writerow(row)
 
 if __name__ == '__main__':
     main()
+    #run_experiments_and_save_results(episode_counts=[10, 40, 80, 120, 160, 200, 240])

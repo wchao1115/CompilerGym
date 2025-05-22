@@ -65,7 +65,7 @@ class Policy(nn.Module):
         # 2. the value of the input state
         return logits, state_value
     
-    def select_action(self, state, mask, temperature: float = 1.0, exploration_rate: float = 0.001) -> int:
+    def select_action(self, state, mask, temperature: float = 1.0, exploration_rate: float = 0) -> int:
         """Selects an action from the input state and save it for the record"""
 
         logits, value = self(state)
